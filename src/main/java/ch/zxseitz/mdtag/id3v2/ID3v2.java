@@ -8,9 +8,20 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
-import static ch.zxseitz.mdtag.Frame.*;
-
 public class ID3v2 implements IParseTag {
+    public static byte[] id = new byte[] {
+           0x49, 0x44, 0x33
+    };
+
+    private HashMap<String, Frame> frames;
+
+    public ID3v2() {
+        this.frames = new HashMap<>();
+        for (var frame : Frame.values()) {
+            frames.put(frame.id, frame);
+        }
+    }
+
     @Override
     public Map<Frame, String> parse(byte[] data) {
         var metadata = new HashMap<Frame, String>();
@@ -18,7 +29,7 @@ public class ID3v2 implements IParseTag {
 
         // size
         buffer.position(6);
-        var tagSize = unsync(buffer);
+        var tagSize = unsync(buffer.getInt());
 
         var frameIdBytes = new byte[4];
         // parse frames
@@ -35,59 +46,11 @@ public class ID3v2 implements IParseTag {
                 var frameContent = buffer.get() == 0x0
                         ? parseISOLatin1(buffer, frameSize - 1)
                         : parseUnicode(buffer, frameSize - 1);
-                switch (frameId) {
-                    case "TALB":
-                        metadata.put(ALBUM, frameContent);
-                        break;
-                    case "TCOM":
-                        metadata.put(COMPOSER, frameContent);
-                        break;
-                    case "TCON":
-                        metadata.put(CONTENT_TYPE, frameContent);
-                        break;
-                    case "TENC":
-                        metadata.put(ENCODED_BY, frameContent);
-                        break;
-                    case "TEXT":
-                        metadata.put(LYRICIST, frameContent);
-                        break;
-                    case "TIT1":
-                        metadata.put(CONTENT_GROUP, frameContent);
-                        break;
-                    case "TIT2":
-                        metadata.put(TITLE, frameContent);
-                        break;
-                    case "TIT3":
-                        metadata.put(SUBTITLE, frameContent);
-                        break;
-                    case "TLAN":
-                        metadata.put(LANGUAGE, frameContent);
-                        break;
-                    case "TLEN":
-                        metadata.put(LENGTH, frameContent);
-                        break;
-                    case "TPE1":
-                        metadata.put(LEAD_ARTIST, frameContent);
-                        break;
-                    case "TPE2":
-                        metadata.put(BAND, frameContent);
-                        break;
-                    case "TPE3":
-                        metadata.put(CONDUCTOR, frameContent);
-                        break;
-                    case "TPE4":
-                        metadata.put(INTERPRETED, frameContent);
-                        break;
-                    case "TPUB":
-                        metadata.put(PUBLISHER, frameContent);
-                        break;
-                    case "TRCK":
-                        metadata.put(TRACK, frameContent);
-                        break;
-                    case "TYER":
-                        metadata.put(YEAR, frameContent);
-                    default:
-                        System.out.println("Frame: " + frameId + " is ignored.");
+                var frame = frames.get(frameId);
+                if (frame != null) {
+                    metadata.put(frame, frameContent);
+                } else {
+                    System.out.println("Frame \"" + frameId + "\" is ignored.");
                 }
             }
 
@@ -116,17 +79,47 @@ public class ID3v2 implements IParseTag {
         return new String(buffer.array(), start, count, StandardCharsets.UTF_16);
     }
 
+    public byte[] write(Map<Frame, String> metadata) {
+        var buffer = ByteBuffer.allocate(4096);
+        buffer.put(id);
+
+
+
+        return buffer.array();
+    }
+
+    private static byte[] writeFrame(Frame frame, String content) {
+        return new byte[0];
+    }
+
     /**
-     * Unsynchronizes an synchronized integer
+     * Unsynchronizes a synchronized integer
      *
-     * @param buffer Byte buffer to parse. Reads the next 4 bytes from the current position.
-     * @return
+     * @param value synchronized integer
+     * @return unsynchronized integer
      */
-    public static int unsync(ByteBuffer buffer) {
-        int i = buffer.get();
-        for (int k = 1; k < 4; k++) {
+    public static int unsync(int value) {
+        var pattern = 0b11111111;
+        var i = (value >>> 24) & pattern;
+        for (var k = 2; k >= 0; k--) {
             i <<= 7;
-            i |= buffer.get();
+            i += (value >>> k * 8) & pattern;
+        }
+        return i;
+    }
+
+    /**
+     * Synchronizes an unsynchronized integer
+     *
+     * @param value unsynchronized integer
+     * @return synchronized integer
+     */
+    public static int sync(int value) {
+        var pattern = 0b1111111;
+        var i = (value >>> 21) & pattern;
+        for (var k = 2; k >= 0; k--) {
+            i <<= 8;
+            i += (value >>> k * 7) & pattern;
         }
         return i;
     }
